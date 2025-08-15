@@ -1,0 +1,15 @@
+{
+  "id": "pf2e-combat-quickloot",
+  "title": "PF2e Combat Quickloot",
+  "description": "Zeigt allen Spielern nach dem Kampf einen Loot-Dialog mit Sammel- und Identifikationsfunktionen.",
+  "version": "0.1.0",
+  "authors": [{ "name": "Dein Name" }],
+  "compatibility": { "minimum": "13", "verified": "13" },
+  "systems": ["pf2e"],
+  "scripts": ["scripts/quickloot.js"],
+  "styles": ["styles/quickloot.css"],
+  "packs": [],
+  "relationships": { "systems": [] },
+  "manifest": "",
+  "download": ""
+}
