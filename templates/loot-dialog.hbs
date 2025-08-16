@@ -3,7 +3,7 @@
     {{#each items}}
     <tr data-item="{{this.item.id}}">
       <td class="item-link" data-item="{{this.item.id}}">
-        {{this.qty}} × {{#if this.identified}}{{this.item.name}}{{else}}???{{/if}}
+        {{this.qty}} × {{#if this.identified}}{{this.name}}{{else}}???{{/if}}
       </td>
       <td>
         <select class="actor-select">

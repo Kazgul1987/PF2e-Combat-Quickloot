@@ -35,12 +35,18 @@ function collectLoot(combat) {
 function groupItems(items) {
   const map = {};
   for (const item of items) {
-    const key = item.name;
-    if (!map[key]) map[key] = { item, qty: 0 };
-    map[key].qty++;
-    map[key].identified =
+    const key = item.slug ?? `${item.id}|${item.name}`;
+    if (!map[key])
+      map[key] = {
+        item,
+        qty: 0,
+        name: item.slug ?? item.name
+      };
+    const entry = map[key];
+    entry.qty++;
+    entry.identified =
       item.system.identification?.status !== "unidentified";
-    map[key].magical = item.isMagical;
+    entry.magical = item.isMagical;
   }
   return Object.values(map);
 }
