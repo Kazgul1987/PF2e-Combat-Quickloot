@@ -15,6 +15,7 @@ Hooks.on("deleteCombat", async combat => {
   new Dialog({
     title: "Quick Loot",
     content: html,
+    buttons: {},
     render: dlg => activateListeners(dlg)
   }).render(true);
 });
