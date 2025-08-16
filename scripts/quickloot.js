@@ -25,11 +25,7 @@ function collectLoot(combat) {
   for (const c of combat.combatants) {
     const actor = c.actor;
     if (!actor || actor.system.attributes.hp.value > 0) continue;
-    loot.push(
-      ...actor.items.contents.filter(
-        item => item.type === "treasure" && !item.system?.equipped
-      )
-    );
+    loot.push(...actor.items.contents.filter(item => item.isPhysical));
   }
   return loot;
 }

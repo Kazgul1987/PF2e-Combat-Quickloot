@@ -19,10 +19,15 @@ const combat = {
         system: { attributes: { hp: { value: 0 } } },
         items: {
           contents: [
-            { name: 'Gold Coin', type: 'treasure', system: {} },
-            { name: 'Sword', type: 'weapon', system: { equipped: false } },
-            { name: 'Equipped Necklace', type: 'treasure', system: { equipped: true } },
-            { name: 'Gem', type: 'treasure', system: { equipped: false } }
+            { name: 'Gold Coin', type: 'treasure', system: {}, isPhysical: true },
+            { name: 'Sword', type: 'weapon', system: { equipped: false }, isPhysical: true },
+            {
+              name: 'Equipped Necklace',
+              type: 'treasure',
+              system: { equipped: true },
+              isPhysical: true
+            },
+            { name: 'Gem', type: 'treasure', system: { equipped: false }, isPhysical: true }
           ]
         }
       }
@@ -32,7 +37,7 @@ const combat = {
         system: { attributes: { hp: { value: 10 } } },
         items: {
           contents: [
-            { name: 'Alive Treasure', type: 'treasure', system: {} }
+            { name: 'Alive Treasure', type: 'treasure', system: {}, isPhysical: true }
           ]
         }
       }
@@ -44,7 +49,7 @@ const loot = collectLoot(combat);
 
 assert.deepStrictEqual(
   loot.map(i => i.name).sort(),
-  ['Gold Coin', 'Gem'].sort()
+  ['Gold Coin', 'Sword', 'Equipped Necklace', 'Gem'].sort()
 );
 
 console.log('collectLoot test passed');
