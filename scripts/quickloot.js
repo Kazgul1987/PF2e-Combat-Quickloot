@@ -4,12 +4,10 @@ Hooks.on("deleteCombat", async combat => {
   if (!game.user.isGM) return;
 
   const loot = collectLoot(combat);
-  if (!loot.length) return;
-
   const grouped = groupItems(loot);
   const html = await renderTemplate(
     "modules/pf2e-combat-quickloot/templates/loot-dialog.hbs",
-    { items: grouped, actors: lootActors() }
+    { items: grouped, actors: lootActors(), hasLoot: loot.length > 0 }
   );
 
   new Dialog({
