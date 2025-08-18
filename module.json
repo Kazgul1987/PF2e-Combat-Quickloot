@@ -3,13 +3,29 @@
   "title": "PF2e Combat Quickloot",
   "description": "Zeigt allen Spielern nach dem Kampf einen Loot-Dialog mit Sammel- und Identifikationsfunktionen.",
   "version": "0.1.0",
-  "authors": [{ "name": "Kazgul1987" }],
-  "compatibility": { "minimum": "13", "verified": "13" },
-  "systems": ["pf2e"],
-  "scripts": ["scripts/quickloot.js"],
-  "styles": ["styles/quickloot.css"],
+  "authors": [
+    {
+      "name": "Kazgul1987"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "systems": [
+    "pf2e"
+  ],
+  "scripts": [
+    "scripts/quickloot.js",
+    "scripts/inventory-dialog.js"
+  ],
+  "styles": [
+    "styles/quickloot.css"
+  ],
   "packs": [],
-  "relationships": { "systems": [] },
+  "relationships": {
+    "systems": []
+  },
   "manifest": "https://raw.githubusercontent.com/Kazgul1987/PF2e-Combat-Quickloot/main/module.json",
   "download": "https://github.com/Kazgul1987/PF2e-Combat-Quickloot/releases/latest/download/module.zip"
 }
