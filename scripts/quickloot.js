@@ -1,6 +1,6 @@
 // PF2e Combat Quickloot
-// Hook: sobald ein Kampf gelöscht wird → Loot-Dialog öffnen
-Hooks.on("deleteCombat", async combat => {
+// Hook: bevor ein Kampf gelöscht wird → Loot-Dialog öffnen
+Hooks.on("preDeleteCombat", async combat => {
   if (!game.user.isGM) return;
 
   const loot = collectLoot(combat);
