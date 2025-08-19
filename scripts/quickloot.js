@@ -37,8 +37,7 @@ Hooks.on("deleteItem", item => {
 Hooks.on("preDeleteCombat", async combat => {
   if (!game.user.isGM) return;
 
-  const loot = collectCachedLoot(combat);
-  const grouped = groupItems(loot);
+  collectCachedLoot(combat);
   const npcs = [];
   for (const c of combat.combatants) {
     const actor = c.actor;
@@ -105,26 +104,6 @@ function collectCachedLoot(combat) {
   // Fallback auf Live-Daten, falls nichts gecached wurde
   if (!loot.length) return collectLoot(combat);
   return loot;
-}
-
-// gruppiert gleichnamige Items
-function groupItems(items) {
-  const map = {};
-  for (const item of items) {
-    const key = item.slug ?? `${item.id}|${item.name}`;
-    if (!map[key])
-      map[key] = {
-        item,
-        qty: 0,
-        name: item.slug ?? item.name
-      };
-    const entry = map[key];
-    entry.qty++;
-    entry.identified =
-      item.system.identification?.status !== "unidentified";
-    entry.magical = item.isMagical;
-  }
-  return Object.values(map);
 }
 
 // listet mögliche Ziel-Actors auf
