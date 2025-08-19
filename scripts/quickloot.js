@@ -106,6 +106,26 @@ function collectCachedLoot(combat) {
   return loot;
 }
 
+// gruppiert gleichnamige Items
+function groupItems(items) {
+  const map = {};
+  for (const item of items) {
+    const key = item.slug ?? `${item.id}|${item.name}`;
+    let entry = map[key];
+    if (!entry)
+      entry = map[key] = {
+        item,
+        qty: item.quantity ?? 1,
+        name: item.slug ?? item.name
+      };
+    else entry.qty += item.quantity ?? 1;
+    entry.identified =
+      item.system.identification?.status !== "unidentified";
+    entry.magical = item.isMagical;
+  }
+  return Object.values(map);
+}
+
 // listet mögliche Ziel-Actors auf
 function lootActors() {
   return game.actors.filter(a => a.type === "character" && a.hasPlayerOwner);
