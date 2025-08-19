@@ -112,14 +112,14 @@ function groupItems(items) {
   const map = {};
   for (const item of items) {
     const key = item.slug ?? `${item.id}|${item.name}`;
-    if (!map[key])
-      map[key] = {
+    let entry = map[key];
+    if (!entry)
+      entry = map[key] = {
         item,
-        qty: 0,
+        qty: item.quantity ?? 1,
         name: item.slug ?? item.name
       };
-    const entry = map[key];
-    entry.qty++;
+    else entry.qty += item.quantity ?? 1;
     entry.identified =
       item.system.identification?.status !== "unidentified";
     entry.magical = item.isMagical;
