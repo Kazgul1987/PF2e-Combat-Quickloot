@@ -9,7 +9,7 @@ function showInventoryDialog() {
     .map(
       i =>
         `<tr data-id="${i.id}">
-           <td class="item-link">${i.quantity ?? 1} × ${i.name}</td>
+           <td class="item-link">${i.quantity ?? 1} × ${TextEditor.encodeHTML(i.name)}</td>
          </tr>`
     )
     .join("");

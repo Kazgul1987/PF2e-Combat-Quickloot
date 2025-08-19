@@ -37,8 +37,7 @@ Hooks.on("deleteItem", item => {
 Hooks.on("preDeleteCombat", async combat => {
   if (!game.user.isGM) return;
 
-  const loot = collectCachedLoot(combat);
-  const grouped = groupItems(loot);
+  collectCachedLoot(combat);
   const npcs = [];
   for (const c of combat.combatants) {
     const actor = c.actor;
