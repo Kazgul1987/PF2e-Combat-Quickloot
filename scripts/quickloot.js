@@ -1,9 +1,43 @@
 // PF2e Combat Quickloot
+
+// Zwischenspeicher für NPC-Items
+const cachedNpcItems = new Map();
+
+// Hook: Combatant wird erstellt → Items cachen
+Hooks.on("createCombatant", combatant => {
+  const actor = combatant.actor;
+  if (!actor || actor.type !== "npc") return;
+  cachedNpcItems.set(combatant.id, {
+    combatId: combatant.parent?.id,
+    actorId: actor.id,
+    items: actor.items.filter(i => i.isPhysical)
+  });
+});
+
+// Hooks: Items aktualisiert/gelöscht → Cache aktualisieren
+function updateCachedActor(actor) {
+  for (const data of cachedNpcItems.values()) {
+    if (data.actorId === actor.id) {
+      data.items = actor.items.filter(i => i.isPhysical);
+    }
+  }
+}
+
+Hooks.on("updateItem", item => {
+  const actor = item.parent;
+  if (actor?.type === "npc") updateCachedActor(actor);
+});
+
+Hooks.on("deleteItem", item => {
+  const actor = item.parent;
+  if (actor?.type === "npc") updateCachedActor(actor);
+});
+
 // Hook: bevor ein Kampf gelöscht wird → Loot-Dialog öffnen
 Hooks.on("preDeleteCombat", async combat => {
   if (!game.user.isGM) return;
 
-  const loot = collectLoot(combat);
+  const loot = collectCachedLoot(combat);
   const grouped = groupItems(loot);
   const html = await renderTemplate(
     "modules/pf2e-combat-quickloot/templates/loot-dialog.hbs",
@@ -27,6 +61,29 @@ function collectLoot(combat) {
     if (!actor || actor.system.attributes.hp.value > 0) continue;
     loot.push(...actor.items.contents.filter(item => item.isPhysical));
   }
+  return loot;
+}
+
+// sammelt Items aus dem Zwischenspeicher
+function collectCachedLoot(combat) {
+  const loot = [];
+  for (const [combatantId, data] of cachedNpcItems) {
+    if (data.combatId !== combat.id) continue;
+    const combatant = combat.combatants.get?.(combatantId);
+    if (combatant) {
+      const actor = combatant.actor;
+      if (!actor || actor.system.attributes.hp.value > 0) continue;
+    }
+    loot.push(...data.items);
+  }
+
+  // Einträge für diesen Kampf entfernen
+  for (const [combatantId, data] of Array.from(cachedNpcItems)) {
+    if (data.combatId === combat.id) cachedNpcItems.delete(combatantId);
+  }
+
+  // Fallback auf Live-Daten, falls nichts gecached wurde
+  if (!loot.length) return collectLoot(combat);
   return loot;
 }
 
