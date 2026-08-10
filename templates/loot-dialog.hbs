@@ -7,8 +7,8 @@
           <tr>
             <th class="quantity">Menge</th>
             <th class="item-name">Gegenstand</th>
+            <th class="actions">Aktionen</th>
             {{#each ../targets}}<th class="target">{{this}}</th>{{/each}}
-            <th class="actions"><span class="sr-only">Aktionen</span></th>
           </tr>
         </thead>
         <tbody>
@@ -16,27 +16,31 @@
             <tr data-row="{{this.key}}">
               <td class="quantity">{{this.quantity}} ×</td>
               <td class="item-name">
-                {{#if this.identified}}
+                <img src="{{this.img}}" alt="">
+                {{#if this.quicklootIdentified}}
                   <button type="button" class="item-link" data-row="{{this.key}}">{{this.name}}</button>
                 {{else}}
                   <span>{{this.name}}</span>
                 {{/if}}
               </td>
+              <td class="actions">
+                {{#if this.showIdentify}}
+                  <button type="button" class="identify" data-row="{{this.key}}" title="Identifikations-Checks anzeigen" aria-label="Identifikations-Checks anzeigen">
+                    <i class="fa-solid fa-magnifying-glass" inert></i>
+                  </button>
+                {{/if}}
+                <button type="button" class="quickloot-chat" data-row="{{this.key}}" title="In Chat posten" aria-label="In Chat posten">
+                  <i class="fa-solid fa-comment" inert></i>
+                </button>
+              </td>
               {{#each ../../targets}}
                 <td class="target">
                   <label title="{{this}}">
-                    <input type="radio" name="target-{{../key}}" value="{{this}}" {{#if @first}}checked{{/if}}>
+                    <input type="radio" name="target-{{../key}}" data-row="{{../key}}" value="{{this}}" {{#if (eq this ../target)}}checked{{/if}}>
                     <span class="sr-only">{{this}}</span>
                   </label>
                 </td>
               {{/each}}
-              <td class="actions">
-                {{#if this.identifiable}}
-                  <button type="button" class="identify" data-row="{{this.key}}" title="Mögliche Identifikations-Checks posten" aria-label="Mögliche Identifikations-Checks posten">
-                    <i class="fa-solid fa-magnifying-glass" inert></i>
-                  </button>
-                {{/if}}
-              </td>
             </tr>
           {{/each}}
         </tbody>

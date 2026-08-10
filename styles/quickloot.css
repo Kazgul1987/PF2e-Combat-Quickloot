@@ -40,6 +40,15 @@
   text-align: left;
 }
 
+.quickloot .item-name img {
+  width: 2rem;
+  height: 2rem;
+  margin-right: 0.35rem;
+  border: 0;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
 .quickloot button.item-link {
   width: auto;
   min-height: 0;
@@ -70,8 +79,9 @@
 }
 
 .quickloot .actions {
-  width: 2.25rem;
+  width: 4.25rem;
   text-align: center;
+  white-space: nowrap;
 }
 
 .quickloot .actions button {
