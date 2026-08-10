@@ -171,6 +171,15 @@
     throw new Error("Die installierte PF2e-Version stellt keine unterstützte Item-Transfer-API bereit.");
   }
 
+  /** Keep PF2e's persistent status aligned with the state shown in Quickloot before transfer. */
+  async function synchronizeIdentificationStatus(item, row) {
+    if (!row.mystifiable || !isPhysicalItem(item)) return;
+    if (typeof item.setIdentificationStatus !== "function") return;
+
+    const status = row.quicklootIdentified ? "identified" : "unidentified";
+    await item.setIdentificationStatus(status);
+  }
+
   function getIdentificationBaseDC(item) {
     const level = Math.trunc(Number(item.level ?? item.system?.level?.value ?? 0));
     const standardDC = level <= -1 ? 13 : ITEM_DC_BY_LEVEL[Math.min(level, 25)];
@@ -383,6 +392,7 @@
               this._removeRow(key);
               continue;
             }
+            await synchronizeIdentificationStatus(item, row);
             await transferPhysicalItem(source, target, item, quantity);
             this._removeRow(key); // A successful row can never be submitted a second time.
           } catch (error) {
