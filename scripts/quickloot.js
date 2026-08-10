@@ -187,6 +187,10 @@
       this.element.querySelectorAll("button.item-link").forEach((button) => {
         button.addEventListener("click", () => this._onOpenItem(button.dataset.row));
       });
+      const distributeButton = this.element.querySelector(".quickloot-distribute");
+      distributeButton?.addEventListener("click", (event) => {
+        void this.distribute(event, distributeButton);
+      });
     }
 
     async _getCurrentItem(key) {
@@ -230,8 +234,6 @@
         const targets = resolveTargetActors();
         if (!targets) return;
 
-        const form = this.element.querySelector("form.quickloot");
-        const selections = new FormData(form);
         let failures = 0;
         for (const [key, row] of Array.from(this.rows)) {
           const source = await resolveSourceActor(row.sourceUuid);
@@ -242,7 +244,9 @@
             continue;
           }
 
-          const targetName = selections.get(`target-${key}`);
+          const rowElement = Array.from(this.element.querySelectorAll("tr[data-row]"))
+            .find((candidate) => candidate.dataset.row === key);
+          const targetName = rowElement?.querySelector('input[type="radio"]:checked')?.value;
           const target = targets.get(targetName);
           try {
             if (!target) throw new Error("Der ausgewählte Target-Actor existiert nicht.");
@@ -269,7 +273,7 @@
         }
       } finally {
         this._distributing = false;
-        button.disabled = false;
+        if (this.rows.size > 0) button.disabled = false;
       }
     }
   }
@@ -292,16 +296,7 @@
         position: { width: 760 },
         modal: true,
         content,
-        buttons: [
-          {
-            action: "distribute",
-            label: "Items verteilen",
-            icon: "fa-solid fa-box-open",
-            default: true,
-            close: false,
-            callback: (event, button) => dialog.distribute(event, button),
-          },
-        ],
+        buttons: [],
       },
       rows,
     );

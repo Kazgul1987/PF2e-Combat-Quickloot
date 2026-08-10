@@ -81,6 +81,14 @@
   padding: 0;
 }
 
+.quickloot-footer {
+  display: flex;
+}
+
+.quickloot-footer .quickloot-distribute {
+  width: 100%;
+}
+
 .quickloot.inventory td {
   text-align: left;
 }
