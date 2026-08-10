@@ -326,7 +326,13 @@
         position: { width: 760 },
         modal: true,
         content,
-        buttons: [],
+        buttons: [
+          {
+            action: "close",
+            label: "Schließen",
+            icon: "fa-solid fa-xmark",
+          },
+        ],
       },
       rows,
     );
