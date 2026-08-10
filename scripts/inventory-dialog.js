@@ -1,13 +1,17 @@
 (() => {
   "use strict";
 
+  function isPhysicalItem(item) {
+    return item?.isOfType?.("physical") === true;
+  }
+
   async function showInventoryDialog() {
     const token = canvas.tokens.controlled[0];
     if (!token?.actor) return ui.notifications.warn("Bitte zuerst einen Token auswählen.");
 
     const actor = token.actor;
     const rows = actor.items
-      .filter((item) => item.isPhysical === true)
+      .filter((item) => isPhysicalItem(item))
       .map((item) => {
         const { name } = game.pf2eCombatQuickloot.getSafeItemDisplayData(item);
         return `<tr><td>${Number(item.quantity ?? 1)} × ${foundry.utils.escapeHTML(name)}</td></tr>`;
