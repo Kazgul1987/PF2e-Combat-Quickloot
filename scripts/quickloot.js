@@ -25,19 +25,37 @@
     ui.notifications.error(message);
   }
 
+  function normalizeName(name) {
+    return String(name ?? "").trim().toLocaleLowerCase();
+  }
+
   /** Resolve the three deliberately fixed destinations and never return partial results. */
   function resolveTargetActors({ notify = true } = {}) {
-    const actors = TARGET_NAMES.map((name) => game.actors.find((actor) => actor.name === name) ?? null);
-    const missing = TARGET_NAMES.filter((_name, index) => !actors[index]);
+    const partyActor = game.actors.party;
+    const lootActor = game.actors.find((actor) => normalizeName(actor.name) === "loot") ?? null;
+    const sellActor = game.actors.find((actor) => normalizeName(actor.name) === "sell") ?? null;
+    const missing = [!lootActor && "Loot", !sellActor && "Sell"].filter(Boolean);
+    const hasPartyActor = partyActor?.type === "party";
+
+    if (!hasPartyActor && notify) {
+      ui.notifications.error(
+        `${PREFIX} Kein aktiver PF2e-Party-Actor gefunden. Der Partystash kann nicht verwendet werden.`,
+      );
+    }
     if (missing.length) {
       if (notify) {
         ui.notifications.error(
           `${PREFIX} Folgende Ziel-Actors fehlen: ${missing.join(", ")}. Der Loot-Dialog wurde nicht geöffnet.`,
         );
       }
-      return null;
     }
-    return new Map(actors.map((actor) => [actor.name, actor]));
+    if (!hasPartyActor || missing.length) return null;
+
+    return {
+      Partystash: partyActor,
+      Loot: lootActor,
+      Sell: sellActor,
+    };
   }
 
   function isDefeated(combatant) {
@@ -247,7 +265,7 @@
           const rowElement = Array.from(this.element.querySelectorAll("tr[data-row]"))
             .find((candidate) => candidate.dataset.row === key);
           const targetName = rowElement?.querySelector('input[type="radio"]:checked')?.value;
-          const target = targets.get(targetName);
+          const target = TARGET_NAMES.includes(targetName) ? targets[targetName] : null;
           try {
             if (!target) throw new Error("Der ausgewählte Target-Actor existiert nicht.");
             const quantity = Math.min(row.quantity, Number(item.quantity ?? 0));
