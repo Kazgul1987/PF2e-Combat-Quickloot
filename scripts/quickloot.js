@@ -89,6 +89,7 @@
           quantity,
           identified,
           identifiable: !identified && (item.isMagical || item.isAlchemical),
+          displayName: display.name,
         };
         rows.set(key, row);
         section.items.push({
@@ -121,8 +122,9 @@
 
   function getIdentificationBaseDC(item) {
     const level = Math.trunc(Number(item.level ?? item.system?.level?.value ?? 0));
-    if (level <= -1) return 13;
-    return ITEM_DC_BY_LEVEL[Math.min(level, 25)];
+    const standardDC = level <= -1 ? 13 : ITEM_DC_BY_LEVEL[Math.min(level, 25)];
+    const pwolEnabled = game.pf2e?.settings?.variants?.pwol?.enabled === true;
+    return pwolEnabled ? standardDC - Math.max(level, 0) : standardDC;
   }
 
   function getIdentificationRarityModifier(item) {
@@ -174,11 +176,11 @@
     constructor(options, rows) {
       super(options);
       this.rows = rows;
-      this.distributing = false;
+      this._distributing = false;
     }
 
-    _onRender(context, options) {
-      super._onRender(context, options);
+    async _onRender(context, options) {
+      await super._onRender(context, options);
       this.element.querySelectorAll("button.identify").forEach((button) => {
         button.addEventListener("click", () => this._onIdentify(button.dataset.row));
       });
@@ -205,52 +207,70 @@
       try {
         await postIdentificationChecks(item);
       } catch (error) {
-        notifyError(`${PREFIX} Identifikations-Checks konnten nicht gepostet werden: ${error.message}`, error);
+        notifyError(`Identifikations-Checks konnten nicht gepostet werden: ${error.message}`, error);
       }
+    }
+
+    _removeRow(key) {
+      this.rows.delete(key);
+      const element = Array.from(this.element.querySelectorAll("tr[data-row]"))
+        .find((candidate) => candidate.dataset.row === key);
+      const section = element?.closest("section.quickloot-section");
+      element?.remove();
+      if (section && !section.querySelector("tr[data-row]")) section.remove();
     }
 
     async distribute(event, button) {
       event.preventDefault();
-      if (this.distributing) return false;
-      this.distributing = true;
+      if (this._distributing) return;
+      this._distributing = true;
       button.disabled = true;
 
-      const targets = resolveTargetActors();
-      if (!targets) {
-        this.distributing = false;
-        button.disabled = false;
-        return false;
-      }
+      try {
+        const targets = resolveTargetActors();
+        if (!targets) return;
 
-      const form = this.element.querySelector("form.quickloot");
-      const failures = [];
-      for (const [key, row] of this.rows) {
-        const targetName = new FormData(form).get(`target-${key}`);
-        const target = targets.get(targetName);
-        try {
+        const form = this.element.querySelector("form.quickloot");
+        const selections = new FormData(form);
+        let failures = 0;
+        for (const [key, row] of Array.from(this.rows)) {
           const source = await resolveSourceActor(row.sourceUuid);
           const item = source?.items.get(row.itemId);
-          if (!source) throw new Error("Source-Actor existiert nicht mehr.");
-          if (!item || item.isPhysical !== true) throw new Error("Das physische Source-Item existiert nicht mehr.");
-          if (!target) throw new Error("Der ausgewählte Target-Actor existiert nicht.");
-          const quantity = Math.min(row.quantity, Number(item.quantity ?? 0));
-          if (quantity < 1) throw new Error("Die Item-Menge ist nicht mehr verfügbar.");
-          await transferPhysicalItem(source, target, item, quantity);
-          this.rows.delete(key); // A successful row can never be submitted a second time.
-        } catch (error) {
-          console.error(`${PREFIX} Transfer von Loot-Zeile ${key} fehlgeschlagen.`, error);
-          failures.push(error.message);
-        }
-      }
+          if (!source || !item || item.isPhysical !== true) {
+            console.warn(`${PREFIX} Loot-Zeile ${key} wurde entfernt, da das Source-Item nicht mehr existiert.`);
+            this._removeRow(key);
+            continue;
+          }
 
-      if (failures.length) {
-        ui.notifications.error(`${PREFIX} ${failures.length} Transfer(s) fehlgeschlagen: ${failures.join(" ")}`);
-        this.distributing = false;
+          const targetName = selections.get(`target-${key}`);
+          const target = targets.get(targetName);
+          try {
+            if (!target) throw new Error("Der ausgewählte Target-Actor existiert nicht.");
+            const quantity = Math.min(row.quantity, Number(item.quantity ?? 0));
+            if (quantity < 1) {
+              console.warn(`${PREFIX} Loot-Zeile ${key} wurde entfernt, da keine Item-Menge mehr verfügbar ist.`);
+              this._removeRow(key);
+              continue;
+            }
+            await transferPhysicalItem(source, target, item, quantity);
+            this._removeRow(key); // A successful row can never be submitted a second time.
+          } catch (error) {
+            failures += 1;
+            notifyError(
+              `„${row.displayName}“ konnte nicht nach „${targetName ?? "unbekannt"}“ übertragen werden.`,
+              error,
+            );
+          }
+        }
+
+        if (this.rows.size === 0) {
+          if (!failures) ui.notifications.info(`${PREFIX} Loot wurde erfolgreich verteilt.`);
+          await this.close();
+        }
+      } finally {
+        this._distributing = false;
         button.disabled = false;
-        return false;
       }
-      ui.notifications.info(`${PREFIX} Alle Items wurden verteilt.`);
-      return true;
     }
   }
 
@@ -278,6 +298,7 @@
             label: "Items verteilen",
             icon: "fa-solid fa-box-open",
             default: true,
+            close: false,
             callback: (event, button) => dialog.distribute(event, button),
           },
         ],
@@ -288,7 +309,7 @@
   }
 
   Hooks.on("deleteCombat", (combat) => void showLootDialog(combat).catch((error) => {
-    notifyError(`${PREFIX} Der Loot-Dialog konnte nicht geöffnet werden.`, error);
+    notifyError("Der Loot-Dialog konnte nicht geöffnet werden.", error);
   }));
 
   const namespace = (game.pf2eCombatQuickloot ??= {});
