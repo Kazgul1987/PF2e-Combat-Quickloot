@@ -421,7 +421,7 @@
         id: `${MODULE_ID}-dialog`,
         window: { title: "PF2e Combat Quickloot" },
         position: { width: 760 },
-        modal: true,
+        modal: false,
         content,
         buttons: [
           {
