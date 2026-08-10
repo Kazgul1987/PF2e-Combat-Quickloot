@@ -62,6 +62,10 @@
     return combatant.defeated === true || Number(combatant.actor?.system?.attributes?.hp?.value) <= 0;
   }
 
+  function isPhysicalItem(item) {
+    return item?.isOfType?.("physical") === true;
+  }
+
   function isItemIdentified(item) {
     return item.isIdentified ?? item.system?.identification?.status === "identified";
   }
@@ -93,7 +97,15 @@
       if (!actor || actor.type !== "npc" || !isDefeated(combatant)) continue;
 
       const section = { name: actor.name, items: [] };
-      for (const item of actor.items.filter((candidate) => candidate.isPhysical === true)) {
+      console.debug(
+        `${PREFIX} Prüfe Inventar von "${actor.name}"`,
+        actor.items.map((item) => ({
+          name: item.name,
+          type: item.type,
+          physical: isPhysicalItem(item),
+        })),
+      );
+      for (const item of actor.items.filter((candidate) => isPhysicalItem(candidate))) {
         const quantity = Number(item.quantity ?? item.system?.quantity ?? 1);
         if (!Number.isFinite(quantity) || quantity < 1) continue;
 
@@ -256,7 +268,7 @@
         for (const [key, row] of Array.from(this.rows)) {
           const source = await resolveSourceActor(row.sourceUuid);
           const item = source?.items.get(row.itemId);
-          if (!source || !item || item.isPhysical !== true) {
+          if (!source || !item || !isPhysicalItem(item)) {
             console.warn(`${PREFIX} Loot-Zeile ${key} wurde entfernt, da das Source-Item nicht mehr existiert.`);
             this._removeRow(key);
             continue;
