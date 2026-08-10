@@ -7,6 +7,18 @@
   const PREFIX = "PF2e Combat Quickloot |";
   const TEMPLATE = `modules/${MODULE_ID}/templates/loot-dialog.hbs`;
   const TARGET_NAMES = Object.freeze(["Partystash", "Loot", "Sell"]);
+  const ITEM_DC_BY_LEVEL = Object.freeze([
+    14, 15, 16, 18, 19, 20, 22, 23, 24, 26, 27, 28, 30,
+    31, 32, 34, 35, 36, 38, 39, 40, 42, 44, 46, 48, 50,
+  ]);
+  const RARITY_MODIFIERS = Object.freeze({ common: 0, uncommon: 2, rare: 5, unique: 10 });
+  const HARD_DC_MODIFIER = 2;
+  const MAGIC_TRADITION_SKILLS = Object.freeze({
+    arcane: "arcana",
+    primal: "nature",
+    divine: "religion",
+    occult: "occultism",
+  });
 
   function notifyError(message, error) {
     console.error(`${PREFIX} ${message}`, error);
@@ -32,14 +44,26 @@
     return combatant.defeated === true || Number(combatant.actor?.system?.attributes?.hp?.value) <= 0;
   }
 
-  function safeItemName(item) {
-    if (item.isIdentified ?? item.system?.identification?.status === "identified") return item.name;
-    return (
-      item.getMystifiedName?.() ??
-      item.getMystifiedData?.("unidentified")?.name ??
-      game.i18n.localize(`TYPES.Item.${item.type}`) ??
-      "Unidentifizierter Gegenstand"
-    );
+  function isItemIdentified(item) {
+    return item.isIdentified ?? item.system?.identification?.status === "identified";
+  }
+
+  /** Return only data that is safe to render for the item's identification state. */
+  function getSafeItemDisplayData(item) {
+    if (isItemIdentified(item)) return { name: item.name, img: item.img };
+
+    const fallback = { name: "Unidentifizierter Gegenstand", img: "icons/svg/item-bag.svg" };
+    if (typeof item.getMystifiedData !== "function") return fallback;
+    try {
+      const mystified = item.getMystifiedData("unidentified");
+      return {
+        name: typeof mystified?.name === "string" && mystified.name ? mystified.name : fallback.name,
+        img: typeof mystified?.img === "string" && mystified.img ? mystified.img : fallback.img,
+      };
+    } catch (error) {
+      console.warn(`${PREFIX} Mystifizierte Item-Daten konnten nicht gelesen werden.`, error);
+      return fallback;
+    }
   }
 
   function collectLoot(combat) {
@@ -56,7 +80,8 @@
         if (!Number.isFinite(quantity) || quantity < 1) continue;
 
         const key = foundry.utils.randomID();
-        const identified = item.isIdentified ?? item.system?.identification?.status === "identified";
+        const identified = isItemIdentified(item);
+        const display = getSafeItemDisplayData(item);
         const row = {
           key,
           sourceUuid: actor.uuid,
@@ -69,7 +94,7 @@
         section.items.push({
           key,
           quantity,
-          name: safeItemName(item),
+          name: display.name,
           identified,
           identifiable: row.identifiable,
         });
@@ -94,48 +119,54 @@
     throw new Error("Die installierte PF2e-Version stellt keine unterstützte Item-Transfer-API bereit.");
   }
 
-  /**
-   * Adapter for PF2e's identification API. Keeping this isolated makes adding the
-   * actual skill roll and setIdentificationStatus("identified") straightforward.
-   */
-  function getIdentificationDCs(item) {
-    const api = game.pf2e?.identification;
-    const options = {
-      pwol: game.pf2e?.settings?.variants?.pwol?.enabled ?? false,
-      notMatchingTraditionModifier: game.settings.get("pf2e", "identifyMagicNotMatchingTraditionModifier"),
-    };
-    const candidates = [
-      () => item.getIdentificationDCs?.(options),
-      () => api?.getItemIdentificationDCs?.(item, options),
-      () => api?.getIdentificationDCs?.(item, options),
-    ];
-    for (const candidate of candidates) {
-      const dcs = candidate();
-      if (dcs && typeof dcs === "object") return dcs;
+  function getIdentificationBaseDC(item) {
+    const level = Math.trunc(Number(item.level ?? item.system?.level?.value ?? 0));
+    if (level <= -1) return 13;
+    return ITEM_DC_BY_LEVEL[Math.min(level, 25)];
+  }
+
+  function getIdentificationRarityModifier(item) {
+    const traits = item.traits;
+    const cursed = typeof traits?.has === "function" && traits.has("cursed");
+    const rarity = cursed ? "unique" : String(item.rarity ?? item.system?.traits?.rarity ?? "common").toLowerCase();
+    return RARITY_MODIFIERS[rarity] ?? 0;
+  }
+
+  function getMagicTraditions(item) {
+    const values = item.system?.traits?.value;
+    const traits = new Set(Array.isArray(values) ? values : values instanceof Set ? values : []);
+    return new Set(Object.keys(MAGIC_TRADITION_SKILLS).filter((tradition) => traits.has(tradition)));
+  }
+
+  function getIdentificationChecks(item) {
+    const dc = getIdentificationBaseDC(item) + getIdentificationRarityModifier(item);
+    if (item.isMagical === true) {
+      const traditions = getMagicTraditions(item);
+      return Object.entries(MAGIC_TRADITION_SKILLS).map(([tradition, skill]) => ({
+        skill,
+        dc: dc + (traditions.size > 0 && !traditions.has(tradition) ? HARD_DC_MODIFIER : 0),
+      }));
     }
-    throw new Error(
-      "Die PF2e-Identification-API ist in dieser Systemversion nicht öffentlich verfügbar. Es werden bewusst keine DCs hartcodiert.",
-    );
+    return item.isAlchemical === true ? [{ skill: "crafting", dc }] : [];
   }
 
   async function postIdentificationChecks(item) {
-    const dcs = getIdentificationDCs(item);
+    const dcs = getIdentificationChecks(item);
     const skillLabels = CONFIG.PF2E.skills ?? CONFIG.PF2E.skillList ?? {};
-    const checks = Object.entries(dcs)
-      .filter(([, dc]) => Number.isFinite(Number(dc)))
-      .map(([skill, dc]) => {
+    const checks = dcs
+      .filter(({ dc }) => Number.isFinite(dc))
+      .map(({ skill, dc }) => {
         const label = game.i18n.localize(skillLabels[skill]?.label ?? skillLabels[skill] ?? `PF2E.Skill.${skill}`);
         return `<li>${foundry.utils.escapeHTML(label)} DC ${Number(dc)}</li>`;
       })
       .join("");
-    if (!checks) throw new Error("PF2e hat für diesen Gegenstand keine möglichen Identifikations-Checks geliefert.");
+    if (!checks) throw new Error("Für diesen Gegenstand sind keine Identifikations-Checks verfügbar.");
 
     // Deliberately use only mystified plain text: no UUID, link, image, price, level, traits, or description.
-    const name = foundry.utils.escapeHTML(safeItemName(item));
-    const action = item.isMagical ? "Identify Magic" : item.isAlchemical ? "Identify Alchemy" : "Identify Item";
+    const name = foundry.utils.escapeHTML(getSafeItemDisplayData(item).name);
     await ChatMessage.create({
       user: game.user.id,
-      content: `<section class="pf2e-quickloot-identification"><h3>${action}</h3><p>${name}</p><p><strong>Possible Checks:</strong></p><ul>${checks}</ul></section>`,
+      content: `<section class="pf2e-quickloot-identification"><h3>Gegenstand identifizieren</h3><p>${name}</p><p><strong>Mögliche Identifikations-Checks</strong></p><ul>${checks}</ul></section>`,
     });
   }
 
@@ -261,5 +292,14 @@
   }));
 
   const namespace = (game.pf2eCombatQuickloot ??= {});
-  Object.assign(namespace, { resolveTargetActors, showLootDialog });
+  Object.assign(namespace, {
+    getIdentificationChecks,
+    getIdentificationBaseDC,
+    getIdentificationRarityModifier,
+    getMagicTraditions,
+    getSafeItemDisplayData,
+    postIdentificationChecks,
+    resolveTargetActors,
+    showLootDialog,
+  });
 })();
