@@ -1,45 +1,46 @@
 <form class="quickloot">
-  {{#if hasLoot}}
-    {{#each npcs}}
+  {{#each sections}}
+    <section class="quickloot-section">
       <h3>{{this.name}}</h3>
       <table>
-        {{#if this.items.length}}
+        <thead>
+          <tr>
+            <th class="quantity">Menge</th>
+            <th class="item-name">Gegenstand</th>
+            {{#each ../targets}}<th class="target">{{this}}</th>{{/each}}
+            <th class="actions"><span class="sr-only">Aktionen</span></th>
+          </tr>
+        </thead>
+        <tbody>
           {{#each this.items}}
-            <tr data-item="{{this.item.id}}" data-actor="{{../id}}">
-              <td class="item-link" data-item="{{this.item.id}}">
-                {{this.qty}} × {{this.name}}
+            <tr data-row="{{this.key}}">
+              <td class="quantity">{{this.quantity}} ×</td>
+              <td class="item-name">
+                {{#if this.identified}}
+                  <button type="button" class="item-link" data-row="{{this.key}}">{{this.name}}</button>
+                {{else}}
+                  <span>{{this.name}}</span>
+                {{/if}}
               </td>
-              <td>
-                <select class="actor-select">
-                  {{#each ../../actors}}
-                    <option value="{{this.id}}">{{this.name}}</option>
-                  {{/each}}
-                </select>
-              </td>
+              {{#each ../../targets}}
+                <td class="target">
+                  <label title="{{this}}">
+                    <input type="radio" name="target-{{../key}}" value="{{this}}" {{#if @first}}checked{{/if}}>
+                    <span class="sr-only">{{this}}</span>
+                  </label>
+                </td>
+              {{/each}}
               <td class="actions">
-                {{#if this.magical}}
-                  <button type="button" class="identify" data-item="{{this.item.id}}" title="Identifizieren">
-                    <i class="fas fa-eye"></i>
+                {{#if this.identifiable}}
+                  <button type="button" class="identify" data-row="{{this.key}}" title="Mögliche Identifikations-Checks posten" aria-label="Mögliche Identifikations-Checks posten">
+                    <i class="fa-solid fa-magnifying-glass" inert></i>
                   </button>
                 {{/if}}
-                <button type="button" class="transfer" title="Übertragen">
-                  <i class="fas fa-hand-holding"></i>
-                </button>
               </td>
             </tr>
           {{/each}}
-        {{else}}
-          <tr>
-            <td colspan="3">Keine Beute.</td>
-          </tr>
-        {{/if}}
+        </tbody>
       </table>
-    {{/each}}
-  {{else}}
-    <table>
-      <tr>
-        <td>Keine Beute.</td>
-      </tr>
-    </table>
-  {{/if}}
+    </section>
+  {{/each}}
 </form>
