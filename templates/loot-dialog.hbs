@@ -1,4 +1,4 @@
-<form class="quickloot">
+<div class="quickloot">
   {{#each sections}}
     <section class="quickloot-section">
       <h3>{{this.name}}</h3>
@@ -43,4 +43,10 @@
       </table>
     </section>
   {{/each}}
-</form>
+  <footer class="quickloot-footer">
+    <button type="button" class="quickloot-distribute">
+      <i class="fa-solid fa-box-open" inert></i>
+      Items verteilen
+    </button>
+  </footer>
+</div>
