@@ -93,10 +93,13 @@
 
 .quickloot-footer {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.quickloot-footer .quickloot-distribute {
-  width: 100%;
+.quickloot-footer button {
+  flex: 1 1 14rem;
+  margin: 0;
 }
 
 .quickloot.inventory td {
