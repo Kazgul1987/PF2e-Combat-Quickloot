@@ -230,7 +230,7 @@
       .filter(({ dc }) => Number.isFinite(dc))
       .map(({ skill, dc }) => {
         const label = game.i18n.localize(skillLabels[skill]?.label ?? skillLabels[skill] ?? `PF2E.Skill.${skill}`);
-        return `@Check[${skill}|dc:${Number(dc)}|options:${IDENTIFICATION_OPTION_PREFIX}${row.checkId}]{${foundry.utils.escapeHTML(label)}}`;
+        return `@Check[${skill}|dc:${Number(dc)}|traits:secret|options:${IDENTIFICATION_OPTION_PREFIX}${row.checkId}]{${foundry.utils.escapeHTML(label)}}`;
       })
       .join("<br>");
     if (!checks) throw new Error("Für diesen Gegenstand sind keine Identifikations-Checks verfügbar.");
@@ -548,17 +548,26 @@
     row.quicklootIdentified = true;
     const source = game.actors.get(row.sourceActorId);
     const item = source?.items.get(row.itemId);
+    if (item && isPhysicalItem(item) && typeof item.setIdentificationStatus === "function") {
+      try {
+        await item.setIdentificationStatus("identified");
+      } catch (error) {
+        console.warn(`${PREFIX} Das Source-Item konnte nicht persistent identifiziert werden.`, error);
+      }
+    }
+
     if (item) {
       row.displayName = item.name;
       row.displayImg = item.img;
     }
     row.dialog?.revealRow(row.key);
 
-    if (item && isPhysicalItem(item) && typeof item.setIdentificationStatus === "function") {
+    if (item) {
       try {
-        await item.setIdentificationStatus("identified");
+        await postItemToChat(item, row);
       } catch (error) {
-        console.warn(`${PREFIX} Das Source-Item konnte nicht persistent identifiziert werden.`, error);
+        console.error(`${PREFIX} Der automatisch identifizierte Gegenstand konnte nicht in den Chat gepostet werden.`, error);
+        ui.notifications.warn(`${PREFIX} Der Gegenstand wurde identifiziert, aber der automatische Chat-Post ist fehlgeschlagen.`);
       }
     }
   }
