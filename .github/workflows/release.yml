@@ -1,0 +1,116 @@
+name: Build and Publish Release
+
+on:
+  # Weg 1:
+  # Release über die GitHub-Weboberfläche erstellen und veröffentlichen.
+  release:
+    types:
+      - published
+
+  # Weg 2:
+  # Versionstag lokal erstellen und zu GitHub pushen.
+  # Beispiel:
+  # git tag v1.0.9
+  # git push origin v1.0.9
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build module.zip
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout release version
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Validate module.json
+        shell: bash
+        run: |
+          test -f module.json || {
+            echo "::error::module.json wurde nicht gefunden."
+            exit 1
+          }
+
+          python3 -m json.tool module.json > /dev/null
+
+      - name: Check version against tag
+        shell: bash
+        run: |
+          MODULE_VERSION="$(python3 -c \
+            'import json; print(json.load(open("module.json", encoding="utf-8"))["version"])')"
+
+          TAG="${{ steps.tag.outputs.tag }}"
+          TAG_VERSION="${TAG#v}"
+
+          echo "module.json version: $MODULE_VERSION"
+          echo "Release/tag version: $TAG_VERSION"
+
+          if [[ "$MODULE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::Version in module.json ($MODULE_VERSION) stimmt nicht mit dem Tag ($TAG) überein."
+            exit 1
+          fi
+
+      - name: Build module.zip
+        shell: bash
+        run: |
+          rm -f module.zip
+
+          FILES=(
+            module.json
+            scripts
+            styles
+            templates
+          )
+
+          if [[ -f README.md ]]; then
+            FILES+=(README.md)
+          fi
+
+          zip -r module.zip "${FILES[@]}"
+
+          echo "Contents of module.zip:"
+          unzip -l module.zip
+
+      - name: Create release for pushed tag if necessary
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG existiert bereits."
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
+      - name: Upload module.zip to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          gh release upload "$TAG" module.zip --clobber
