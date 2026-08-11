@@ -148,6 +148,7 @@
           img: display.img,
           quicklootIdentified,
           showIdentify: row.mystifiable && !quicklootIdentified,
+          showReveal: row.mystifiable && !quicklootIdentified,
           target: row.target,
         });
       }
@@ -214,6 +215,13 @@
       : [];
   }
 
+  /** Never fall back to the actual item name while Quickloot still treats an item as mystified. */
+  function getSafeMystifiedName(item, mystified = getMystifiedDisplayData(item)) {
+    return mystified.name && mystified.name !== item.name
+      ? mystified.name
+      : "Unidentifizierter Gegenstand";
+  }
+
   async function postIdentificationChecks(item, row) {
     row.checkId ??= foundry.utils.randomID();
     const dcs = getIdentificationChecks(item);
@@ -228,8 +236,9 @@
     if (!checks) throw new Error("Für diesen Gegenstand sind keine Identifikations-Checks verfügbar.");
 
     // Deliberately use only mystified plain text: no UUID, link, image, price, level, traits, or description.
-    const name = foundry.utils.escapeHTML(getMystifiedDisplayData(item).name);
-    const rawContent = `<section class="pf2e-quickloot-identification"><h3>Gegenstand identifizieren</h3><p>${name}</p><p><strong>Mögliche Identifikations-Checks</strong></p>${checks}</section>`;
+    const mystified = getMystifiedDisplayData(item);
+    const safeName = foundry.utils.escapeHTML(getSafeMystifiedName(item, mystified));
+    const rawContent = `<section class="pf2e-quickloot-identification"><h3 class="pf2e-quickloot-mystified-name">${safeName}</h3><p><strong>Gegenstand identifizieren</strong></p><p><strong>Mögliche Identifikations-Checks</strong></p>${checks}</section>`;
     const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, {
       async: true,
       secrets: false,
@@ -261,14 +270,12 @@
     }
 
     const mystified = getMystifiedDisplayData(item);
-    const safeName = mystified.name && mystified.name !== item.name
-      ? mystified.name
-      : "Unidentifizierter Gegenstand";
+    const safeName = getSafeMystifiedName(item, mystified);
     const safeDescription = mystified.description.includes(item.name) || /@UUID\s*\[/i.test(mystified.description)
       ? ""
       : mystified.description;
     // This deliberately has no UUID, item data attributes, level, price, traits, runes, or hidden elements.
-    const content = `<article class="pf2e-quickloot-mystified"><header><img src="${escapeAttribute(mystified.img)}" alt="Unidentifizierter Gegenstand"><h3>${foundry.utils.escapeHTML(safeName)}</h3></header><p>${foundry.utils.escapeHTML(safeDescription)}</p></article>`;
+    const content = `<article class="pf2e-quickloot-mystified"><h3 class="pf2e-quickloot-mystified-name">${foundry.utils.escapeHTML(safeName)}</h3><img src="${escapeAttribute(mystified.img)}" alt="Unidentifizierter Gegenstand"><p>${foundry.utils.escapeHTML(safeDescription)}</p></article>`;
     if (content.includes(item.name) || /@UUID\s*\[/i.test(content)) {
       throw new Error("Der mystifizierte Chat-Inhalt hat die Sicherheitsprüfung nicht bestanden.");
     }
@@ -280,12 +287,16 @@
       super(options);
       this.rows = rows;
       this._distributing = false;
+      this._identifyingAll = false;
     }
 
     async _onRender(context, options) {
       await super._onRender(context, options);
       this.element.querySelectorAll("button.identify").forEach((button) => {
         button.addEventListener("click", () => this._onIdentify(button.dataset.row));
+      });
+      this.element.querySelectorAll("button.quickloot-reveal").forEach((button) => {
+        button.addEventListener("click", () => this._onReveal(button.dataset.row));
       });
       this.element.querySelectorAll("button.quickloot-chat").forEach((button) => {
         button.addEventListener("click", () => this._onChat(button.dataset.row));
@@ -302,6 +313,10 @@
       const distributeButton = this.element.querySelector(".quickloot-distribute");
       distributeButton?.addEventListener("click", (event) => {
         void this.distribute(event, distributeButton);
+      });
+      const identifyAllButton = this.element.querySelector(".quickloot-identify-all");
+      identifyAllButton?.addEventListener("click", () => {
+        void this._onIdentifyAll(identifyAllButton);
       });
     }
 
@@ -328,6 +343,60 @@
       }
     }
 
+    async _onReveal(key) {
+      const { row, item } = await this._getCurrentItem(key);
+      if (!row || !item || !row.mystifiable || row.quicklootIdentified) return;
+
+      row.quicklootIdentified = true;
+      row.displayName = item.name;
+      row.displayImg = item.img;
+      this.revealRow(key);
+
+      if (typeof item.setIdentificationStatus !== "function") {
+        console.warn(`${PREFIX} Das Source-Item unterstützt keine persistente Identifikation.`);
+        ui.notifications.warn(`${PREFIX} Der persistente PF2e-Status konnte nicht aktualisiert werden.`);
+        return;
+      }
+      try {
+        await item.setIdentificationStatus("identified");
+      } catch (error) {
+        console.warn(`${PREFIX} Das Source-Item konnte nicht persistent identifiziert werden.`, error);
+        ui.notifications.warn(`${PREFIX} Der persistente PF2e-Status konnte nicht aktualisiert werden.`);
+      }
+    }
+
+    async _onIdentifyAll(button) {
+      if (this._identifyingAll) return;
+      this._identifyingAll = true;
+      button.disabled = true;
+      try {
+        const candidates = Array.from(this.rows.values())
+          .filter((row) => row.mystifiable && !row.quicklootIdentified);
+        if (!candidates.length) {
+          ui.notifications.info("Es gibt keine nicht identifizierten Gegenstände.");
+          return;
+        }
+
+        for (const row of candidates) {
+          try {
+            const current = await this._getCurrentItem(row.key);
+            if (!current.row || !current.item) {
+              console.warn(`${PREFIX} Identifikations-Checks für Loot-Zeile ${row.key} wurden übersprungen: Source-Item fehlt.`);
+              continue;
+            }
+            // Recheck after awaiting the source actor so a concurrent reveal remains idempotent.
+            if (!current.row.mystifiable || current.row.quicklootIdentified) continue;
+            await postIdentificationChecks(current.item, current.row);
+          } catch (error) {
+            console.warn(`${PREFIX} Identifikations-Checks für Loot-Zeile ${row.key} konnten nicht gepostet werden.`, error);
+          }
+        }
+      } finally {
+        this._identifyingAll = false;
+        button.disabled = false;
+      }
+    }
+
     async _onChat(key) {
       const { row, item } = await this._getCurrentItem(key);
       if (!row || !item) return ui.notifications.error(`${PREFIX} Der Gegenstand existiert nicht mehr.`);
@@ -348,6 +417,7 @@
         nameCell.querySelector("button.item-link")?.addEventListener("click", () => this._onOpenItem(key));
       }
       element.querySelector("button.identify")?.remove();
+      element.querySelector("button.quickloot-reveal")?.remove();
     }
 
     _removeRow(key) {

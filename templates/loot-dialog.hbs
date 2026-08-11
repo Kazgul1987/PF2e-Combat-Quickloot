@@ -29,6 +29,11 @@
                     <i class="fa-solid fa-magnifying-glass" inert></i>
                   </button>
                 {{/if}}
+                {{#if this.showReveal}}
+                  <button type="button" class="quickloot-reveal" data-row="{{this.key}}" title="Gegenstand entmystifizieren" aria-label="Gegenstand entmystifizieren">
+                    <i class="fa-solid fa-eye" inert></i>
+                  </button>
+                {{/if}}
                 <button type="button" class="quickloot-chat" data-row="{{this.key}}" title="In Chat posten" aria-label="In Chat posten">
                   <i class="fa-solid fa-comment" inert></i>
                 </button>
@@ -48,6 +53,10 @@
     </section>
   {{/each}}
   <footer class="quickloot-footer">
+    <button type="button" class="quickloot-identify-all" title="Alle nicht identifizierten Gegenstände in den Chat posten">
+      <i class="fa-solid fa-magnifying-glass" inert></i>
+      Alle identifizieren
+    </button>
     <button type="button" class="quickloot-distribute">
       <i class="fa-solid fa-box-open" inert></i>
       Items verteilen
