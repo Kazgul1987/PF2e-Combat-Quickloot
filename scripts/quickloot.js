@@ -103,15 +103,51 @@
     return identified ? { name: item.name, img: item.img } : getMystifiedDisplayData(item);
   }
 
+  function stableStringify(value) {
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+    if (value && typeof value === "object") {
+      return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  /**
+   * Stack identity uses PF2e's stable compendium/source UUID when available and a
+   * sanitized system-data fingerprint. Actor/document IDs, quantity, location and
+   * persistent identification state are deliberately excluded.
+   */
+  function getLootStackKey(item) {
+    const sourceId = item.sourceId
+      ?? item.flags?.core?.sourceId
+      ?? item._stats?.compendiumSource
+      ?? item.toObject?.()?._stats?.compendiumSource
+      ?? null;
+    const system = foundry.utils.deepClone(item.system ?? {});
+    delete system.quantity;
+    delete system.identification;
+    delete system.containerId;
+    delete system.equipped;
+    const identity = {
+      type: item.type,
+      sourceId,
+      name: item.name,
+      system,
+    };
+    return stableStringify(identity);
+  }
+
+  function updateRowQuantity(row) {
+    row.quantity = row.sources.reduce((total, source) => total + Number(source.quantity || 0), 0);
+  }
+
   function collectLoot(combat) {
-    const sections = [];
     const rows = new Map();
+    const stacks = new Map();
 
     for (const combatant of combat.combatants) {
       const actor = combatant.actor;
       if (!actor || actor.type !== "npc" || !isDefeated(combatant)) continue;
 
-      const section = { name: actor.name, items: [] };
       console.debug(
         `${PREFIX} Prüfe Inventar von "${actor.name}"`,
         actor.items.map((item) => ({
@@ -124,36 +160,44 @@
         const quantity = Number(item.quantity ?? item.system?.quantity ?? 1);
         if (!Number.isFinite(quantity) || quantity < 1) continue;
 
-        const key = foundry.utils.randomID();
-        const quicklootIdentified = !isQuicklootMystifiable(item);
-        const display = quicklootIdentified ? { name: item.name, img: item.img } : getMystifiedDisplayData(item);
-        const row = {
-          key,
-          sourceUuid: actor.uuid,
-          sourceActorId: actor.id,
-          itemId: item.id,
-          quantity,
-          target: TARGET_NAMES[0],
-          quicklootIdentified,
-          mystifiable: !quicklootIdentified,
-          displayName: display.name,
-          displayImg: display.img,
-        };
-        openLootRows.set(key, row);
-        rows.set(key, row);
-        section.items.push({
-          key,
-          quantity,
-          name: display.name,
-          img: display.img,
-          quicklootIdentified,
-          showIdentify: row.mystifiable && !quicklootIdentified,
-          showReveal: row.mystifiable && !quicklootIdentified,
-          target: row.target,
-        });
+        const stackKey = getLootStackKey(item);
+        let row = stacks.get(stackKey);
+        if (!row) {
+          const key = foundry.utils.randomID();
+          const quicklootIdentified = !isQuicklootMystifiable(item);
+          const display = quicklootIdentified ? { name: item.name, img: item.img } : getMystifiedDisplayData(item);
+          row = {
+            key,
+            sources: [],
+            quantity: 0,
+            target: TARGET_NAMES[0],
+            quicklootIdentified,
+            mystifiable: !quicklootIdentified,
+            displayName: display.name,
+            displayImg: display.img,
+          };
+          stacks.set(stackKey, row);
+          openLootRows.set(key, row);
+          rows.set(key, row);
+        }
+        row.sources.push({ sourceActorId: actor.id, sourceUuid: actor.uuid, itemId: item.id, quantity });
+        updateRowQuantity(row);
       }
-      if (section.items.length) sections.push(section);
     }
+    const sections = [{
+      name: "Beute",
+      items: Array.from(rows.values(), (row) => ({
+        key: row.key,
+        quantity: row.quantity,
+        name: row.displayName,
+        img: row.displayImg,
+        quicklootIdentified: row.quicklootIdentified,
+        showIdentify: row.mystifiable && !row.quicklootIdentified,
+        showReveal: row.mystifiable && !row.quicklootIdentified,
+        target: row.target,
+        sourceCount: new Set(row.sources.map((source) => source.sourceActorId)).size,
+      })),
+    }];
     return { sections, rows };
   }
 
@@ -238,7 +282,7 @@
     // Deliberately use only mystified plain text: no UUID, link, image, price, level, traits, or description.
     const mystified = getMystifiedDisplayData(item);
     const safeName = foundry.utils.escapeHTML(getSafeMystifiedName(item, mystified));
-    const rawContent = `<section class="pf2e-quickloot-identification"><h3 class="pf2e-quickloot-mystified-name">${safeName}</h3><p><strong>Gegenstand identifizieren</strong></p><p><strong>Mögliche Identifikations-Checks</strong></p>${checks}</section>`;
+    const rawContent = `<section class="pf2e-quickloot-identification"><h3 class="pf2e-quickloot-mystified-name">${row.quantity} × ${safeName}</h3><p><strong>Gegenstand identifizieren</strong></p><p><strong>Mögliche Identifikations-Checks</strong></p>${checks}</section>`;
     const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, {
       async: true,
       secrets: false,
@@ -250,8 +294,6 @@
         [MODULE_ID]: {
           action: "identify",
           rowKey: row.key,
-          sourceActorId: row.sourceActorId,
-          itemId: row.itemId,
           checkId: row.checkId,
         },
       },
@@ -264,6 +306,11 @@
 
   async function postItemToChat(item, row) {
     if (row.quicklootIdentified) {
+      if (row.quantity > 1) {
+        const rawContent = `<article class="pf2e-quickloot-stack"><h3>${row.quantity} × @UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</h3></article>`;
+        const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, { async: true, secrets: false });
+        return ChatMessage.create({ user: game.user.id, content });
+      }
       if (typeof item.toMessage === "function") return item.toMessage(undefined, { create: true });
       if (typeof item.toChat === "function") return item.toChat();
       throw new Error("Die installierte PF2e-Version stellt keine Item-Chat-API bereit.");
@@ -275,7 +322,7 @@
       ? ""
       : mystified.description;
     // This deliberately has no UUID, item data attributes, level, price, traits, runes, or hidden elements.
-    const content = `<article class="pf2e-quickloot-mystified"><h3 class="pf2e-quickloot-mystified-name">${foundry.utils.escapeHTML(safeName)}</h3><img src="${escapeAttribute(mystified.img)}" alt="Unidentifizierter Gegenstand"><p>${foundry.utils.escapeHTML(safeDescription)}</p></article>`;
+    const content = `<article class="pf2e-quickloot-mystified"><h3 class="pf2e-quickloot-mystified-name">${row.quantity} × ${foundry.utils.escapeHTML(safeName)}</h3><img src="${escapeAttribute(mystified.img)}" alt="Unidentifizierter Gegenstand"><p>${foundry.utils.escapeHTML(safeDescription)}</p></article>`;
     if (content.includes(item.name) || /@UUID\s*\[/i.test(content)) {
       throw new Error("Der mystifizierte Chat-Inhalt hat die Sicherheitsprüfung nicht bestanden.");
     }
@@ -320,20 +367,34 @@
       });
     }
 
-    async _getCurrentItem(key) {
+    async _getCurrentStack(key) {
       const row = this.rows.get(key);
-      const source = row ? await resolveSourceActor(row.sourceUuid) : null;
-      return { row, source, item: source?.items.get(row?.itemId) ?? null };
+      if (!row) return { row: null, entries: [], representativeItem: null };
+      const entries = [];
+      for (const sourceEntry of row.sources) {
+        const source = await resolveSourceActor(sourceEntry.sourceUuid);
+        const item = source?.items.get(sourceEntry.itemId) ?? null;
+        const quantity = Math.min(Number(sourceEntry.quantity), Number(item?.quantity ?? item?.system?.quantity ?? 0));
+        if (source && item && isPhysicalItem(item) && quantity > 0) {
+          sourceEntry.quantity = quantity;
+          entries.push({ source: sourceEntry, actor: source, item, quantity });
+        }
+      }
+      row.sources = entries.map((entry) => entry.source);
+      updateRowQuantity(row);
+      if (!entries.length) this._removeRow(key);
+      const representativeItem = entries[0]?.item ?? null;
+      return { row: entries.length ? row : null, entries, representativeItem };
     }
 
     async _onOpenItem(key) {
-      const { row, item } = await this._getCurrentItem(key);
+      const { row, representativeItem: item } = await this._getCurrentStack(key);
       // Sheets are offered only for identified items. This is a second guard against forged DOM events.
       if (row?.quicklootIdentified) item?.sheet.render({ force: true });
     }
 
     async _onIdentify(key) {
-      const { row, item } = await this._getCurrentItem(key);
+      const { row, representativeItem: item } = await this._getCurrentStack(key);
       if (!row || !item) return ui.notifications.error(`${PREFIX} Der Gegenstand existiert nicht mehr.`);
       try {
         if (!row.mystifiable || row.quicklootIdentified) return;
@@ -344,7 +405,7 @@
     }
 
     async _onReveal(key) {
-      const { row, item } = await this._getCurrentItem(key);
+      const { row, entries, representativeItem: item } = await this._getCurrentStack(key);
       if (!row || !item || !row.mystifiable || row.quicklootIdentified) return;
 
       row.quicklootIdentified = true;
@@ -352,16 +413,13 @@
       row.displayImg = item.img;
       this.revealRow(key);
 
-      if (typeof item.setIdentificationStatus !== "function") {
-        console.warn(`${PREFIX} Das Source-Item unterstützt keine persistente Identifikation.`);
-        ui.notifications.warn(`${PREFIX} Der persistente PF2e-Status konnte nicht aktualisiert werden.`);
-        return;
-      }
-      try {
-        await item.setIdentificationStatus("identified");
-      } catch (error) {
-        console.warn(`${PREFIX} Das Source-Item konnte nicht persistent identifiziert werden.`, error);
-        ui.notifications.warn(`${PREFIX} Der persistente PF2e-Status konnte nicht aktualisiert werden.`);
+      for (const entry of entries) {
+        if (typeof entry.item.setIdentificationStatus !== "function") continue;
+        try {
+          await entry.item.setIdentificationStatus("identified");
+        } catch (error) {
+          console.warn(`${PREFIX} Ein Source-Item des Stacks konnte nicht persistent identifiziert werden.`, error);
+        }
       }
     }
 
@@ -379,14 +437,14 @@
 
         for (const row of candidates) {
           try {
-            const current = await this._getCurrentItem(row.key);
-            if (!current.row || !current.item) {
+            const current = await this._getCurrentStack(row.key);
+            if (!current.row || !current.representativeItem) {
               console.warn(`${PREFIX} Identifikations-Checks für Loot-Zeile ${row.key} wurden übersprungen: Source-Item fehlt.`);
               continue;
             }
             // Recheck after awaiting the source actor so a concurrent reveal remains idempotent.
             if (!current.row.mystifiable || current.row.quicklootIdentified) continue;
-            await postIdentificationChecks(current.item, current.row);
+            await postIdentificationChecks(current.representativeItem, current.row);
           } catch (error) {
             console.warn(`${PREFIX} Identifikations-Checks für Loot-Zeile ${row.key} konnten nicht gepostet werden.`, error);
           }
@@ -398,7 +456,7 @@
     }
 
     async _onChat(key) {
-      const { row, item } = await this._getCurrentItem(key);
+      const { row, representativeItem: item } = await this._getCurrentStack(key);
       if (!row || !item) return ui.notifications.error(`${PREFIX} Der Gegenstand existiert nicht mehr.`);
       try {
         await postItemToChat(item, row);
@@ -430,6 +488,12 @@
       if (section && !section.querySelector("tr[data-row]")) section.remove();
     }
 
+    _refreshRowQuantity(row) {
+      updateRowQuantity(row);
+      const cell = this.element.querySelector(`tr[data-row="${CSS.escape(row.key)}"] td.quantity`);
+      if (cell) cell.textContent = `${row.quantity} ×`;
+    }
+
     async distribute(event, button) {
       event.preventDefault();
       if (this._distributing) return;
@@ -442,36 +506,30 @@
 
         let failures = 0;
         for (const [key, row] of Array.from(this.rows)) {
-          const source = await resolveSourceActor(row.sourceUuid);
-          const item = source?.items.get(row.itemId);
-          if (!source || !item || !isPhysicalItem(item)) {
-            console.warn(`${PREFIX} Loot-Zeile ${key} wurde entfernt, da das Source-Item nicht mehr existiert.`);
-            this._removeRow(key);
-            continue;
-          }
-
-          const rowElement = Array.from(this.element.querySelectorAll("tr[data-row]"))
-            .find((candidate) => candidate.dataset.row === key);
           const targetName = row.target;
           const target = TARGET_NAMES.includes(targetName) ? targets[targetName] : null;
-          try {
-            if (!target) throw new Error("Der ausgewählte Target-Actor existiert nicht.");
-            const quantity = Math.min(row.quantity, Number(item.quantity ?? 0));
-            if (quantity < 1) {
-              console.warn(`${PREFIX} Loot-Zeile ${key} wurde entfernt, da keine Item-Menge mehr verfügbar ist.`);
-              this._removeRow(key);
-              continue;
+          const remaining = [];
+          for (const sourceEntry of row.sources) {
+            try {
+              if (!target) throw new Error("Der ausgewählte Target-Actor existiert nicht.");
+              const source = await resolveSourceActor(sourceEntry.sourceUuid);
+              const item = source?.items.get(sourceEntry.itemId);
+              const quantity = Math.min(Number(sourceEntry.quantity), Number(item?.quantity ?? item?.system?.quantity ?? 0));
+              if (!source || !item || !isPhysicalItem(item) || quantity < 1) {
+                console.warn(`${PREFIX} Eine nicht mehr vorhandene Stack-Quelle ${sourceEntry.itemId} wurde verworfen.`);
+                continue;
+              }
+              await synchronizeIdentificationStatus(item, row);
+              await transferPhysicalItem(source, target, item, quantity);
+            } catch (error) {
+              remaining.push(sourceEntry);
+              failures += 1;
+              notifyError(`„${row.displayName}“ konnte nicht nach „${targetName ?? "unbekannt"}“ übertragen werden.`, error);
             }
-            await synchronizeIdentificationStatus(item, row);
-            await transferPhysicalItem(source, target, item, quantity);
-            this._removeRow(key); // A successful row can never be submitted a second time.
-          } catch (error) {
-            failures += 1;
-            notifyError(
-              `„${row.displayName}“ konnte nicht nach „${targetName ?? "unbekannt"}“ übertragen werden.`,
-              error,
-            );
           }
+          row.sources = remaining;
+          this._refreshRowQuantity(row);
+          if (!row.sources.length || row.quantity < 1) this._removeRow(key);
         }
 
         if (this.rows.size === 0) {
@@ -543,32 +601,38 @@
     if (!["success", "criticalSuccess"].includes(getIdentificationOutcome(message))) return;
     const flag = getIdentificationFlagFromRoll(message);
     const row = flag ? openLootRows.get(flag.rowKey) : null;
-    if (!row || row.quicklootIdentified || row.sourceActorId !== flag.sourceActorId || row.itemId !== flag.itemId) return;
+    if (!row || row.quicklootIdentified || row.checkId !== flag.checkId) return;
 
     row.quicklootIdentified = true;
-    const source = game.actors.get(row.sourceActorId);
-    const item = source?.items.get(row.itemId);
-    if (item && isPhysicalItem(item) && typeof item.setIdentificationStatus === "function") {
+    const entries = [];
+    for (const sourceEntry of row.sources) {
+      const source = await resolveSourceActor(sourceEntry.sourceUuid);
+      const item = source?.items.get(sourceEntry.itemId);
+      if (item && isPhysicalItem(item)) entries.push({ source: sourceEntry, item });
+    }
+    const representativeItem = entries[0]?.item;
+    for (const entry of entries) {
+      if (typeof entry.item.setIdentificationStatus !== "function") continue;
       try {
-        await item.setIdentificationStatus("identified");
+        await entry.item.setIdentificationStatus("identified");
       } catch (error) {
-        console.warn(`${PREFIX} Das Source-Item konnte nicht persistent identifiziert werden.`, error);
+        console.warn(`${PREFIX} Ein Source-Item des Stacks konnte nicht persistent identifiziert werden.`, error);
       }
     }
 
-    if (item) {
-      row.displayName = item.name;
-      row.displayImg = item.img;
+    if (!representativeItem) {
+      row.dialog?._removeRow(row.key);
+      return;
     }
+    row.displayName = representativeItem.name;
+    row.displayImg = representativeItem.img;
     row.dialog?.revealRow(row.key);
 
-    if (item) {
-      try {
-        await postItemToChat(item, row);
-      } catch (error) {
-        console.error(`${PREFIX} Der automatisch identifizierte Gegenstand konnte nicht in den Chat gepostet werden.`, error);
-        ui.notifications.warn(`${PREFIX} Der Gegenstand wurde identifiziert, aber der automatische Chat-Post ist fehlgeschlagen.`);
-      }
+    try {
+      await postItemToChat(representativeItem, row);
+    } catch (error) {
+      console.error(`${PREFIX} Der automatisch identifizierte Gegenstand konnte nicht in den Chat gepostet werden.`, error);
+      ui.notifications.warn(`${PREFIX} Der Gegenstand wurde identifiziert, aber der automatische Chat-Post ist fehlgeschlagen.`);
     }
   }
 
@@ -582,11 +646,13 @@
   const namespace = (game.pf2eCombatQuickloot ??= {});
   Object.assign(namespace, {
     getIdentificationChecks,
+    getLootStackKey,
     getIdentificationBaseDC,
     getIdentificationRarityModifier,
     getMagicTraditions,
     getSafeItemDisplayData,
     getMystifiedDisplayData,
+    collectLoot,
     isQuicklootMystifiable,
     postItemToChat,
     postIdentificationChecks,
