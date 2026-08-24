@@ -305,16 +305,29 @@
     return foundry.utils.escapeHTML(String(value ?? "")).replaceAll('"', "&quot;");
   }
 
+  /** Create a chat message whose visibility never inherits the user's current chat mode. */
+  async function createPublicChatMessage(data) {
+    const source = typeof data?.toObject === "function" ? data.toObject() : data;
+    const chatData = ChatMessage.applyMode({ ...source }, "public");
+    return ChatMessage.create(chatData);
+  }
+
   async function postItemToChat(item, row) {
     if (row.quicklootIdentified) {
       if (row.quantity > 1) {
         const rawContent = `<article class="pf2e-quickloot-stack"><h3>${row.quantity} × @UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</h3></article>`;
         const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, { async: true, secrets: false });
-        return ChatMessage.create({ user: game.user.id, content });
+        return createPublicChatMessage({ user: game.user.id, content });
       }
-      if (typeof item.toMessage === "function") return item.toMessage(undefined, { create: true });
-      if (typeof item.toChat === "function") return item.toChat();
-      throw new Error("Die installierte PF2e-Version stellt keine Item-Chat-API bereit.");
+      if (typeof item.toMessage === "function") {
+        const message = await item.toMessage(undefined, { create: false });
+        if (message) return createPublicChatMessage(message);
+      }
+
+      // `toChat()` creates immediately and can inherit the global mode, so use a safe identified fallback instead.
+      const rawContent = `<article class="pf2e-quickloot-stack"><h3>@UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</h3></article>`;
+      const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, { async: true, secrets: false });
+      return createPublicChatMessage({ user: game.user.id, content });
     }
 
     const mystified = getMystifiedDisplayData(item);
@@ -327,7 +340,7 @@
     if (content.includes(item.name) || /@UUID\s*\[/i.test(content)) {
       throw new Error("Der mystifizierte Chat-Inhalt hat die Sicherheitsprüfung nicht bestanden.");
     }
-    return ChatMessage.create({ user: game.user.id, content });
+    return createPublicChatMessage({ user: game.user.id, content });
   }
 
   class QuickLootDialog extends foundry.applications.api.DialogV2 {
@@ -655,6 +668,7 @@
     getMystifiedDisplayData,
     collectLoot,
     isQuicklootMystifiable,
+    createPublicChatMessage,
     postItemToChat,
     postIdentificationChecks,
     resolveTargetActors,
