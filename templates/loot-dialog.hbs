@@ -1,6 +1,7 @@
 <div class="quickloot">
-  {{#each sections}}
-    <section class="quickloot-section">
+  <div class="quickloot-scroll">
+    {{#each sections}}
+      <section class="quickloot-section">
       <h3>{{this.name}}</h3>
       <table>
         <thead>
@@ -13,7 +14,7 @@
         </thead>
         <tbody>
           {{#each this.items}}
-            <tr data-row="{{this.key}}">
+            <tr data-row="{{this.key}}" title="Gefunden bei {{this.sourceCount}} Gegnern">
               <td class="quantity">{{this.quantity}} ×</td>
               <td class="item-name">
                 <img src="{{this.img}}" alt="">
@@ -50,8 +51,9 @@
           {{/each}}
         </tbody>
       </table>
-    </section>
-  {{/each}}
+      </section>
+    {{/each}}
+  </div>
   <footer class="quickloot-footer">
     <button type="button" class="quickloot-identify-all" title="Alle nicht identifizierten Gegenstände in den Chat posten">
       <i class="fa-solid fa-magnifying-glass" inert></i>
