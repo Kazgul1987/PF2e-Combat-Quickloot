@@ -117,20 +117,21 @@
    * persistent identification state are deliberately excluded.
    */
   function getLootStackKey(item) {
+    const sourceData = item.toObject(false);
     const sourceId = item.sourceId
       ?? item.flags?.core?.sourceId
       ?? item._stats?.compendiumSource
-      ?? item.toObject?.()?._stats?.compendiumSource
+      ?? sourceData?._stats?.compendiumSource
       ?? null;
-    const system = foundry.utils.deepClone(item.system ?? {});
+    const system = foundry.utils.deepClone(sourceData.system ?? {});
     delete system.quantity;
     delete system.identification;
     delete system.containerId;
     delete system.equipped;
     const identity = {
-      type: item.type,
+      type: sourceData.type,
       sourceId,
-      name: item.name,
+      name: sourceData.name,
       system,
     };
     return stableStringify(identity);
