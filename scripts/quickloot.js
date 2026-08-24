@@ -117,7 +117,7 @@
    * persistent identification state are deliberately excluded.
    */
   function getLootStackKey(item) {
-    const sourceData = item.toObject(false);
+    const sourceData = item.toJSON();
     const sourceId = item.sourceId
       ?? item.flags?.core?.sourceId
       ?? item._stats?.compendiumSource
