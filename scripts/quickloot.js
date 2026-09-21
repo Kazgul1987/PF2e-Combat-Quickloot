@@ -275,15 +275,15 @@
       .filter(({ dc }) => Number.isFinite(dc))
       .map(({ skill, dc }) => {
         const label = game.i18n.localize(skillLabels[skill]?.label ?? skillLabels[skill] ?? `PF2E.Skill.${skill}`);
-        return `@Check[${skill}|dc:${Number(dc)}|traits:secret|options:${IDENTIFICATION_OPTION_PREFIX}${row.checkId}]{${foundry.utils.escapeHTML(label)}}`;
+        return `<span>@Check[${skill}|dc:${Number(dc)}|traits:secret|options:${IDENTIFICATION_OPTION_PREFIX}${row.checkId}]{${foundry.utils.escapeHTML(label)}}</span>`;
       })
-      .join("<br>");
+      .join("");
     if (!checks) throw new Error("Für diesen Gegenstand sind keine Identifikations-Checks verfügbar.");
 
     // Deliberately use only mystified plain text: no UUID, link, image, price, level, traits, or description.
     const mystified = getMystifiedDisplayData(item);
     const safeName = foundry.utils.escapeHTML(getSafeMystifiedName(item, mystified));
-    const rawContent = `<section class="pf2e-quickloot-identification"><h3 class="pf2e-quickloot-mystified-name">${row.quantity} × ${safeName}</h3><p><strong>Gegenstand identifizieren</strong></p><p><strong>Mögliche Identifikations-Checks</strong></p>${checks}</section>`;
+    const rawContent = `<section class="pf2e-quickloot-chat-card pf2e-quickloot-identification"><div class="pf2e-quickloot-chat-title">${row.quantity} × ${safeName}</div><div class="pf2e-quickloot-chat-subtitle">Identifikations-Checks</div><div class="pf2e-quickloot-checks">${checks}</div></section>`;
     const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, {
       async: true,
       secrets: false,
@@ -308,14 +308,18 @@
   /** Create a chat message whose visibility never inherits the user's current chat mode. */
   async function createPublicChatMessage(data) {
     const source = typeof data?.toObject === "function" ? data.toObject() : data;
-    const chatData = ChatMessage.applyMode({ ...source }, "public");
+    const content = String(source?.content ?? "");
+    const wrappedContent = content.includes("pf2e-quickloot-chat-card")
+      ? content
+      : `<div class="pf2e-quickloot-chat-card">${content}</div>`;
+    const chatData = ChatMessage.applyMode({ ...source, content: wrappedContent }, "public");
     return ChatMessage.create(chatData);
   }
 
   async function postItemToChat(item, row) {
     if (row.quicklootIdentified) {
       if (row.quantity > 1) {
-        const rawContent = `<article class="pf2e-quickloot-stack"><h3>${row.quantity} × @UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</h3></article>`;
+        const rawContent = `<article class="pf2e-quickloot-chat-card pf2e-quickloot-stack"><div class="pf2e-quickloot-chat-title">${row.quantity} × @UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</div></article>`;
         const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, { async: true, secrets: false });
         return createPublicChatMessage({ user: game.user.id, content });
       }
@@ -325,7 +329,7 @@
       }
 
       // `toChat()` creates immediately and can inherit the global mode, so use a safe identified fallback instead.
-      const rawContent = `<article class="pf2e-quickloot-stack"><h3>@UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</h3></article>`;
+      const rawContent = `<article class="pf2e-quickloot-chat-card pf2e-quickloot-stack"><div class="pf2e-quickloot-chat-title">@UUID[${escapeAttribute(item.uuid)}]{${foundry.utils.escapeHTML(item.name)}}</div></article>`;
       const content = await foundry.applications.ux.TextEditor.enrichHTML(rawContent, { async: true, secrets: false });
       return createPublicChatMessage({ user: game.user.id, content });
     }
@@ -336,7 +340,7 @@
       ? ""
       : mystified.description;
     // This deliberately has no UUID, item data attributes, level, price, traits, runes, or hidden elements.
-    const content = `<article class="pf2e-quickloot-mystified"><h3 class="pf2e-quickloot-mystified-name">${row.quantity} × ${foundry.utils.escapeHTML(safeName)}</h3><img src="${escapeAttribute(mystified.img)}" alt="Unidentifizierter Gegenstand"><p>${foundry.utils.escapeHTML(safeDescription)}</p></article>`;
+    const content = `<article class="pf2e-quickloot-chat-card pf2e-quickloot-mystified"><div class="pf2e-quickloot-chat-title">${row.quantity} × ${foundry.utils.escapeHTML(safeName)}</div><img src="${escapeAttribute(mystified.img)}" alt="Unidentifizierter Gegenstand"><p>${foundry.utils.escapeHTML(safeDescription)}</p></article>`;
     if (content.includes(item.name) || /@UUID\s*\[/i.test(content)) {
       throw new Error("Der mystifizierte Chat-Inhalt hat die Sicherheitsprüfung nicht bestanden.");
     }
